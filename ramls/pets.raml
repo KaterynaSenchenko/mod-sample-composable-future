@@ -1,0 +1,53 @@
+#%RAML 1.0
+
+title: Pets
+version: v0.1
+protocols: [ HTTP, HTTPS ]
+baseUri: http://localhost
+
+documentation:
+  - title: Pets API
+    content: This documents the API calls that can be made to manage pets
+
+types:
+  pet: !include pet.json
+  petsCollection: !include petsCollection.json
+  errors: !include raml-util/schemas/errors.schema
+
+traits:
+  validate: !include raml-util/traits/validation.raml
+  language: !include raml-util/traits/language.raml
+  pageable:  !include raml-util/traits/pageable.raml
+  searchable: !include raml-util/traits/searchable.raml
+
+resourceTypes:
+  collection: !include raml-util/rtypes/collection.raml
+  collection-item: !include raml-util/rtypes/item-collection.raml
+
+/pets:
+  displayName: Pets
+  description: Pets that live here
+  type:
+    collection:
+      schemaCollection: petsCollection
+      schemaItem: pet
+      exampleCollection: !include examples/petsCollection.sample
+      exampleItem: !include examples/pet.sample
+
+  post:
+    is: [validate]
+  get:
+    is: [
+      searchable: {description: "with valid searchable fields: for example genus=felis", example: "genus=felis"},
+      pageable,
+      validate
+    ]
+  /{id}:
+    displayName: Pet
+    description: Get, Delete or Update a specific pet
+    type:
+      collection-item:
+        schema: pet
+        exampleItem: !include examples/pet.sample
+    put:
+      is: [validate]
