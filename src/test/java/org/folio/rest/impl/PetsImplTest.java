@@ -38,7 +38,8 @@ public class PetsImplTest {
   private static final String PETS_PATH = "/pets";
   private static final String HTTP_PORT = "http.port";
   private static final String TENANT = "diku";
-  private static final String TABLE_NAME = "pets";
+  private static final String HOMELESS_PETS_TABLE_NAME = "homeless_pets";
+  private static final String ADOPTED_PETS_TABLE_NAME = "adopted_pets";
   private static final Header TENANT_HEADER = new Header(RestVerticle.OKAPI_HEADER_TENANT, TENANT);
 
   private static Vertx vertx;
@@ -90,7 +91,12 @@ public class PetsImplTest {
 
   @Before
   public void clearPets(TestContext context) throws Exception {
-    PostgresClient.getInstance(vertx, TENANT).delete(TABLE_NAME, new Criterion(), event -> {
+    PostgresClient.getInstance(vertx, TENANT).delete(HOMELESS_PETS_TABLE_NAME, new Criterion(), event -> {
+      if (event.failed()) {
+        context.fail(event.cause());
+      }
+    });
+    PostgresClient.getInstance(vertx, TENANT).delete(ADOPTED_PETS_TABLE_NAME, new Criterion(), event -> {
       if (event.failed()) {
         context.fail(event.cause());
       }
@@ -272,5 +278,100 @@ public class PetsImplTest {
       .statusCode(HttpStatus.SC_OK)
       .body("id", is(createdPet.getId()));
 
+  }
+
+  @Test
+  public void shouldReturnNotFoundOnDeletePetByIdWhenPetDoesNotExist(final TestContext context) {
+    RestAssured.given()
+      .port(port)
+      .contentType(MediaType.APPLICATION_JSON)
+      .header(TENANT_HEADER)
+      .pathParam("id", "118dbd8c-5ba0-47a9-a850-34bbb1dbf3b7")
+      .when()
+      .delete(PETS_PATH + "/{id}")
+      .then()
+      .statusCode(HttpStatus.SC_NOT_FOUND);
+  }
+
+  @Test
+  public void shouldDeletePetById(final TestContext context) {
+
+    Response response = RestAssured.given()
+      .port(port)
+      .contentType(MediaType.APPLICATION_JSON)
+      .header(TENANT_HEADER)
+      .body(PET1.toString())
+      .when()
+      .post(PETS_PATH);
+    Assert.assertThat(response.statusCode(), is(HttpStatus.SC_CREATED));
+    Pet createdPet = response.body().as(Pet.class);
+
+    RestAssured.given()
+      .port(port)
+      .contentType(MediaType.APPLICATION_JSON)
+      .header(TENANT_HEADER)
+      .pathParam("id", createdPet.getId())
+      .when()
+      .delete(PETS_PATH + "/{id}")
+      .then()
+      .statusCode(HttpStatus.SC_NO_CONTENT);
+
+    RestAssured.given()
+      .port(port)
+      .contentType(MediaType.APPLICATION_JSON)
+      .header(TENANT_HEADER)
+      .pathParam("id", createdPet.getId())
+      .when()
+      .get(PETS_PATH + "/{id}")
+      .then()
+      .statusCode(HttpStatus.SC_NOT_FOUND);
+
+  }
+
+  @Test
+  public void shouldAdoptPetById(final TestContext context) {
+
+    Response createResponse = RestAssured.given()
+      .port(port)
+      .contentType(MediaType.APPLICATION_JSON)
+      .header(TENANT_HEADER)
+      .body(PET2.toString())
+      .when()
+      .post(PETS_PATH);
+    Assert.assertThat(createResponse.statusCode(), is(HttpStatus.SC_CREATED));
+    Pet createdPet = createResponse.body().as(Pet.class);
+
+    Response adoptResponse = RestAssured.given()
+      .port(port)
+      .contentType(MediaType.APPLICATION_JSON)
+      .header(TENANT_HEADER)
+      .pathParam("id", createdPet.getId())
+      .body(createdPet.toString())
+      .when()
+      .post(PETS_PATH + "/adopt/{id}");
+    Assert.assertThat(adoptResponse.statusCode(), is(HttpStatus.SC_CREATED));
+    Pet adoptedPet = adoptResponse.body().as(Pet.class);
+    Assert.assertThat(adoptedPet.getGenus(), is(createdPet.getGenus()));
+    Assert.assertThat(adoptedPet.getQuantity(), is(createdPet.getQuantity()));
+
+    RestAssured.given()
+      .port(port)
+      .contentType(MediaType.APPLICATION_JSON)
+      .header(TENANT_HEADER)
+      .pathParam("id", createdPet.getId())
+      .when()
+      .get(PETS_PATH + "/{id}")
+      .then()
+      .statusCode(HttpStatus.SC_NOT_FOUND);
+
+    RestAssured.given()
+      .port(port)
+      .contentType(MediaType.APPLICATION_JSON)
+      .header(TENANT_HEADER)
+      .pathParam("id", adoptedPet.getId())
+      .when()
+      .get(PETS_PATH + "/adopt/{id}")
+      .then()
+      .statusCode(HttpStatus.SC_OK);
   }
 }

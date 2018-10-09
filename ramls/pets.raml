@@ -51,3 +51,38 @@ resourceTypes:
         exampleItem: !include examples/pet.sample
     put:
       is: [validate]
+  /adopt/{id}:
+    displayName: Pet
+    description: Adopt specific pet
+    get:
+      responses:
+        200:
+          body:
+            application/json:
+              schema: pet
+        404:
+          description: "Pet not found"
+          body:
+            text/plain:
+              example: "Pet not found"
+        500:
+          description: "Internal server error"
+          body:
+            text/plain:
+              example: "Internal server error"
+    post:
+      responses:
+        201:
+          body:
+            application/json:
+              schema: pet
+        404:
+          description: "Pet not found"
+          body:
+            text/plain:
+              example: "Pet not found"
+        500:
+          description: "Internal server error"
+          body:
+            text/plain:
+              example: "Internal server error"
