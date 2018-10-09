@@ -190,15 +190,17 @@ public class PetsImpl implements Pets {
           .compose(this::adoptPet)
           .compose(this::endTx)
           .setHandler(res -> {
-            if (res.succeeded()) {
-              asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond201WithApplicationJson(res.result().entity)));
+            if (res.failed()) {
+              asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond500WithTextPlain(Response.Status.INTERNAL_SERVER_ERROR.getReasonPhrase())));
+            } else if (res.result().entity == null) {
+              asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond404WithTextPlain(Response.Status.NOT_FOUND.getReasonPhrase())));
             } else {
-              asyncResultHandler.handle(Future.succeededFuture(PostPetsResponse.respond500WithTextPlain(Response.Status.INTERNAL_SERVER_ERROR.getReasonPhrase())));
+              asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond201WithApplicationJson(res.result().entity)));
             }
           });
       });
     } catch (Exception e) {
-      asyncResultHandler.handle(Future.succeededFuture(PostPetsResponse.respond500WithTextPlain(Response.Status.INTERNAL_SERVER_ERROR.getReasonPhrase())));
+      asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond500WithTextPlain(Response.Status.INTERNAL_SERVER_ERROR.getReasonPhrase())));
     }
   }
 
@@ -216,8 +218,11 @@ public class PetsImpl implements Pets {
     try {
       Criteria idCrit = constructCriteria("'id'", tx.entity.getId());
       pgClient.get(tx.sqlConnection, HOMELESS_PETS_TABLE_NAME, Pet.class, new Criterion(idCrit), true, false, reply -> {
-        if(reply.failed()) {
+        if (reply.failed()) {
           future.fail(reply.cause());
+        } else if (reply.result().getResults().isEmpty()) {
+          tx.entity = null;
+          future.complete(tx);
         } else {
           List<Pet> pets = reply.result().getResults();
           tx.entity.setGenus(pets.get(0).getGenus());
@@ -234,14 +239,18 @@ public class PetsImpl implements Pets {
   private Future<PgTransaction<Pet>> deleteHomelessPet(PgTransaction<Pet> tx) {
     Future<PgTransaction<Pet>> future = Future.future();
     try {
-      Criteria idCrit = constructCriteria("'id'", tx.entity.getId());
-      pgClient.delete(tx.sqlConnection, HOMELESS_PETS_TABLE_NAME, new Criterion(idCrit), reply -> {
-        if (reply.failed()) {
-          future.fail(reply.cause());
-        } else {
-          future.complete(tx);
-        }
-      });
+      if (tx.entity != null) {
+        Criteria idCrit = constructCriteria("'id'", tx.entity.getId());
+        pgClient.delete(tx.sqlConnection, HOMELESS_PETS_TABLE_NAME, new Criterion(idCrit), reply -> {
+          if (reply.succeeded()) {
+            future.complete(tx);
+          } else {
+            future.fail(reply.cause());
+          }
+        });
+      } else {
+        future.complete(tx);
+      }
     } catch (Exception e) {
       future.fail(e);
     }
@@ -250,18 +259,21 @@ public class PetsImpl implements Pets {
 
   private Future<PgTransaction<Pet>> adoptPet(PgTransaction<Pet> tx) {
     Future<PgTransaction<Pet>> future = Future.future();
-    Pet entity = new Pet();
-    entity.setGenus(tx.entity.getGenus());
-    entity.setQuantity(tx.entity.getQuantity());
     try {
-      pgClient.save(tx.sqlConnection, ADOPTED_PETS_TABLE_NAME, entity, postReply -> {
-        if(postReply.succeeded()) {
-          entity.setId(postReply.result());
-        }
-        PgTransaction<Pet> newTx = new PgTransaction<>(entity);
-        newTx.sqlConnection = tx.sqlConnection;
-        future.complete(newTx);
-      });
+      if(tx.entity != null) {
+        Pet entity = new Pet();
+        entity.setGenus(tx.entity.getGenus());
+        entity.setQuantity(tx.entity.getQuantity());
+        pgClient.save(tx.sqlConnection, ADOPTED_PETS_TABLE_NAME, entity, postReply -> {
+          if (postReply.succeeded()) {
+            entity.setId(postReply.result());
+          }
+          tx.entity = entity;
+          future.complete(tx);
+        });
+      } else {
+        future.complete(tx);
+      }
     } catch (Exception e) {
       pgClient.rollbackTx(tx.sqlConnection, reply -> future.fail(e));
     }

@@ -329,6 +329,19 @@ public class PetsImplTest {
   }
 
   @Test
+  public void shouldReturnNotFoundOnAdoptPetByIdWhenPetDoesNotExist(final TestContext context) {
+    RestAssured.given()
+      .port(port)
+      .contentType(MediaType.APPLICATION_JSON)
+      .header(TENANT_HEADER)
+      .pathParam("id", "118dbd8c-5ba0-47a9-a850-34bbb1dbf3b7")
+      .when()
+      .post(PETS_PATH + "/adopt/{id}")
+      .then()
+      .statusCode(HttpStatus.SC_NOT_FOUND);
+  }
+
+  @Test
   public void shouldAdoptPetById(final TestContext context) {
 
     Response createResponse = RestAssured.given()
@@ -346,7 +359,6 @@ public class PetsImplTest {
       .contentType(MediaType.APPLICATION_JSON)
       .header(TENANT_HEADER)
       .pathParam("id", createdPet.getId())
-      .body(createdPet.toString())
       .when()
       .post(PETS_PATH + "/adopt/{id}");
     Assert.assertThat(adoptResponse.statusCode(), is(HttpStatus.SC_CREATED));
