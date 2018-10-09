@@ -185,8 +185,8 @@ public class PetsImpl implements Pets {
         PgTransaction<Pet> pgTransaction = new PgTransaction<>(entity);
         Future.succeededFuture(pgTransaction)
           .compose(this::startTx)
-          .compose(this::readPetFields)
-          .compose(this::deleteHomelessPet)
+          .compose(this::findPet)
+          .compose(this::vacateShelterPlace)
           .compose(this::adoptPet)
           .compose(this::endTx)
           .setHandler(res -> {
@@ -213,7 +213,7 @@ public class PetsImpl implements Pets {
     return future;
   }
 
-  private Future<PgTransaction<Pet>> readPetFields(PgTransaction<Pet> tx) {
+  private Future<PgTransaction<Pet>> findPet(PgTransaction<Pet> tx) {
     Future<PgTransaction<Pet>> future = Future.future();
     try {
       Criteria idCrit = constructCriteria("'id'", tx.entity.getId());
@@ -236,7 +236,7 @@ public class PetsImpl implements Pets {
     return future;
   }
 
-  private Future<PgTransaction<Pet>> deleteHomelessPet(PgTransaction<Pet> tx) {
+  private Future<PgTransaction<Pet>> vacateShelterPlace(PgTransaction<Pet> tx) {
     Future<PgTransaction<Pet>> future = Future.future();
     try {
       if (tx.entity != null) {
@@ -245,14 +245,14 @@ public class PetsImpl implements Pets {
           if (reply.succeeded()) {
             future.complete(tx);
           } else {
-            future.fail(reply.cause());
+            pgClient.rollbackTx(tx.sqlConnection, res -> future.fail(reply.cause()));
           }
         });
       } else {
         future.complete(tx);
       }
     } catch (Exception e) {
-      future.fail(e);
+      pgClient.rollbackTx(tx.sqlConnection, reply -> future.fail(e));
     }
     return future;
   }
@@ -267,9 +267,11 @@ public class PetsImpl implements Pets {
         pgClient.save(tx.sqlConnection, ADOPTED_PETS_TABLE_NAME, entity, postReply -> {
           if (postReply.succeeded()) {
             entity.setId(postReply.result());
+            tx.entity = entity;
+            future.complete(tx);
+          } else {
+            pgClient.rollbackTx(tx.sqlConnection, reply -> future.fail(postReply.cause()));
           }
-          tx.entity = entity;
-          future.complete(tx);
         });
       } else {
         future.complete(tx);
