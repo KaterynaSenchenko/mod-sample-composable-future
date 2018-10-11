@@ -6,6 +6,4 @@ This software is distributed under the terms of the Apache License, Version 2.0.
 See the file "[LICENSE](LICENSE)" for more information.
 
 
-TODO: Explain the purpose of this module.
-
-HINT: Copy the README of mod-notify.
+The module was created in order to explore the ways to avoid nesting callbacks.
