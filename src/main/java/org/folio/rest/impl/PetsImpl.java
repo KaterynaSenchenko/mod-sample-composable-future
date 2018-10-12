@@ -15,6 +15,7 @@ import org.folio.rest.persist.PostgresClient;
 import org.folio.rest.persist.interfaces.Results;
 import org.folio.rest.utils.PgQuery;
 import org.folio.rest.utils.PgTransaction;
+import org.folio.rest.utils.TransactionExecutor;
 
 import javax.ws.rs.core.Response;
 import java.util.List;
@@ -176,6 +177,35 @@ public class PetsImpl implements Pets {
     }
   }
 
+//  @Override
+//  public void postPetsAdoptById(String id, Map<String, String> okapiHeaders, Handler<AsyncResult<Response>> asyncResultHandler, Context vertxContext) {
+//    try {
+//      vertxContext.runOnContext(v -> {
+//        Pet entity = new Pet();
+//        entity.setId(id);
+//        PgTransaction<Pet> pgTransaction = new PgTransaction<>(entity);
+//        pgTransaction.pgClient = pgClient;
+//        Future.succeededFuture(pgTransaction)
+//          .compose(this::startTx)
+//          .compose(this::findPet)
+//          .compose(this::vacateShelterPlace)
+//          .compose(this::adoptPet)
+//          .compose(this::endTx)
+//          .setHandler(res -> {
+//            if (res.failed()) {
+//              asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond500WithTextPlain(Response.Status.INTERNAL_SERVER_ERROR.getReasonPhrase())));
+//            } else if (res.result().entity == null) {
+//              asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond404WithTextPlain(Response.Status.NOT_FOUND.getReasonPhrase())));
+//            } else {
+//              asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond201WithApplicationJson(res.result().entity)));
+//            }
+//          });
+//      });
+//    } catch (Exception e) {
+//      asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond500WithTextPlain(Response.Status.INTERNAL_SERVER_ERROR.getReasonPhrase())));
+//    }
+//  }
+
   @Override
   public void postPetsAdoptById(String id, Map<String, String> okapiHeaders, Handler<AsyncResult<Response>> asyncResultHandler, Context vertxContext) {
     try {
@@ -183,13 +213,16 @@ public class PetsImpl implements Pets {
         Pet entity = new Pet();
         entity.setId(id);
         PgTransaction<Pet> pgTransaction = new PgTransaction<>(entity);
-        Future.succeededFuture(pgTransaction)
-          .compose(this::startTx)
-          .compose(this::findPet)
-          .compose(this::vacateShelterPlace)
-          .compose(this::adoptPet)
-          .compose(this::endTx)
-          .setHandler(res -> {
+        pgTransaction.pgClient = pgClient;
+        new TransactionExecutor<Pet>() {
+          @Override
+          public Future<PgTransaction<Pet>> runInTransaction(PgTransaction<Pet> tx) {
+            return Future.succeededFuture(tx)
+              .compose(PetsImpl.this::findPet)
+              .compose(PetsImpl.this::vacateShelterPlace)
+              .compose(PetsImpl.this::adoptPet);
+          }
+        }.executeTransaction(pgTransaction).setHandler(res -> {
             if (res.failed()) {
               asyncResultHandler.handle(Future.succeededFuture(PostPetsAdoptByIdResponse.respond500WithTextPlain(Response.Status.INTERNAL_SERVER_ERROR.getReasonPhrase())));
             } else if (res.result().entity == null) {
@@ -245,14 +278,14 @@ public class PetsImpl implements Pets {
           if (reply.succeeded()) {
             future.complete(tx);
           } else {
-            pgClient.rollbackTx(tx.sqlConnection, res -> future.fail(reply.cause()));
+            future.fail(reply.cause());
           }
         });
       } else {
         future.complete(tx);
       }
     } catch (Exception e) {
-      pgClient.rollbackTx(tx.sqlConnection, reply -> future.fail(e));
+      future.fail(e);
     }
     return future;
   }
@@ -270,14 +303,14 @@ public class PetsImpl implements Pets {
             tx.entity = entity;
             future.complete(tx);
           } else {
-            pgClient.rollbackTx(tx.sqlConnection, reply -> future.fail(postReply.cause()));
+            future.fail(postReply.cause());
           }
         });
       } else {
         future.complete(tx);
       }
     } catch (Exception e) {
-      pgClient.rollbackTx(tx.sqlConnection, reply -> future.fail(e));
+      future.fail(e);
     }
     return future;
   }
